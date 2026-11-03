@@ -637,6 +637,12 @@ func convertArgoHelmParametersToMap(params []argoapi.HelmParameter) map[string]a
 	return result
 }
 
+// isHttpURL returns true if s starts with http:// or https://.
+// Used to skip $patternref prefixing for absolute remote value files.
+func isHttpURL(s string) bool {
+	return strings.HasPrefix(s, "http://") || strings.HasPrefix(s, "https://")
+}
+
 func newApplicationValueFiles(p *api.Pattern, prefix string) []string {
 	files := []string{
 		fmt.Sprintf("%s/values-global.yaml", prefix),
@@ -649,7 +655,12 @@ func newApplicationValueFiles(p *api.Pattern, prefix string) []string {
 	}
 
 	for _, extra := range p.Spec.ExtraValueFiles {
-		extraValueFile := fmt.Sprintf("%s/%s", prefix, strings.TrimPrefix(extra, "/"))
+		var extraValueFile string
+		if isHttpURL(extra) {
+			extraValueFile = extra
+		} else {
+			extraValueFile = fmt.Sprintf("%s/%s", prefix, strings.TrimPrefix(extra, "/"))
+		}
 		log.Printf("Values file %q added", extraValueFile)
 		files = append(files, extraValueFile)
 	}
@@ -710,7 +721,11 @@ func getSharedValueFiles(p *api.Pattern, prefix string) ([]string, error) {
 			log.Printf("Failed to render templated string %s: %v", str, err)
 			continue
 		}
-		if strings.HasPrefix(templatedString, "/") {
+		// Do not prefix absolute http(s) URLs with $patternref — ArgoCD fetches
+		// those directly, and a prefixed path is not a valid repo-relative file.
+		if isHttpURL(templatedString) {
+			stringSlice[i] = templatedString
+		} else if strings.HasPrefix(templatedString, "/") {
 			stringSlice[i] = fmt.Sprintf("%s%s", prefix, templatedString)
 		} else {
 			stringSlice[i] = fmt.Sprintf("%s/%s", prefix, templatedString)

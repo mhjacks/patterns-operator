@@ -250,6 +250,23 @@ var _ = Describe("Argo Pattern", func() {
 					"myprefix/test2.yaml")))
 			})
 		})
+
+		Context("With http(s) extra valuefiles", func() {
+			BeforeEach(func() {
+				pattern.Spec.ExtraValueFiles = []string{
+					"https://example.com/extra-values.yaml",
+					"http://example.com/extra-http-values.yaml",
+					"/local-extra.yaml",
+				}
+			})
+			It("Does not prefix http(s) URLs even when a prefix is set", func() {
+				valueFiles := newApplicationValueFiles(pattern, "$patternref")
+				Expect(valueFiles).To(Equal(append(prefixArray(defaultValueFiles, "$patternref"),
+					"https://example.com/extra-values.yaml",
+					"http://example.com/extra-http-values.yaml",
+					"$patternref/local-extra.yaml")))
+			})
+		})
 	})
 
 	Describe("Argo Helm Functions", func() {
@@ -1793,6 +1810,25 @@ var _ = Describe("GetSharedValueFiles", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(result).To(HaveLen(1))
 			Expect(result[0]).To(ContainSubstring("values-shared.yaml"))
+		})
+
+		It("should prefix relative paths but not http(s) URLs", func() {
+			yamlContent := `clusterGroup:
+  sharedValueFiles:
+    - /overrides/values-AWS.yaml
+    - https://example.com/shared-values.yaml
+    - http://example.com/shared-http-values.yaml
+`
+			err := os.WriteFile(filepath.Join(td, "values-global.yaml"), []byte(yamlContent), 0600)
+			Expect(err).ToNot(HaveOccurred())
+
+			result, err := getSharedValueFiles(pattern, "$patternref")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(result).To(Equal([]string{
+				"$patternref/overrides/values-AWS.yaml",
+				"https://example.com/shared-values.yaml",
+				"http://example.com/shared-http-values.yaml",
+			}))
 		})
 	})
 })
